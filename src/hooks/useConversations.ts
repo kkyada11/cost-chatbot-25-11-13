@@ -70,7 +70,7 @@ export function useConversations() {
         selectConversationAction({ conversationId: remaining[0].id });
       } else {
         // 대화가 없으면 새 대화 생성
-        createConversation.mutate();
+        createConversation.mutate(undefined);
       }
 
       showSuccess("대화가 삭제되었습니다.");
