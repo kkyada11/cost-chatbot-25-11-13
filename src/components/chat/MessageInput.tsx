@@ -3,6 +3,7 @@
 import { useState, type FormEvent, type KeyboardEvent } from "react";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
+import { VoiceInputButton } from "./VoiceInputButton";
 
 interface MessageInputProps {
   onSend: (message: string) => void;
@@ -32,6 +33,10 @@ export function MessageInput({
     }
   };
 
+  const handleVoiceTranscript = (transcript: string) => {
+    setMessage((prev) => (prev ? `${prev} ${transcript}` : transcript));
+  };
+
   return (
     <form onSubmit={handleSubmit} className="border-t border-border bg-background p-4">
       <div className="flex gap-2">
@@ -45,6 +50,7 @@ export function MessageInput({
           className="flex-1"
           aria-label="메시지 입력"
         />
+        <VoiceInputButton onTranscript={handleVoiceTranscript} disabled={disabled} />
         <Button type="submit" disabled={disabled || !message.trim()}>
           전송
         </Button>

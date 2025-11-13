@@ -210,7 +210,7 @@ Python backend for expense claim chatbot.
 
 **🚧 현재 진행 중:**
 
-- **Phase 4**: UI 컴포넌트 구현 및 통합 (95% 완료)
+- **Phase 4**: UI 컴포넌트 구현 및 통합 (100% 완료) ✅
 
 **📋 MVP 범위:**
 
@@ -221,18 +221,16 @@ Python backend for expense claim chatbot.
 
 - 🗄️ **IndexedDB**: 5버전 스키마, 메시지 순서 보장 (timestamp 기반 order)
 - 🔄 **Zustand 스토어**: Flux 패턴, 낙관적 업데이트, 20개 액션 완료
-- 🎨 **타이핑 애니메이션**: 실시간 메시지 애니메이션
+- 🎨 **타이핑 애니메이션**: Typed.js 라이브러리를 활용한 AI 메시지 실시간 타이핑 효과, animationStatus 상태 관리 (typing/complete)
 - 📱 **반응형 컴포넌트**: 모든 주요 UI 구현 완료
 - 🏗️ **아키텍처 패턴**: Factory, Repository, Service Layer 완료
 - 🏗️ **Container 패턴**: 로직과 UI 분리
-- 🎤 **음성 입력**: Web Speech API
+- 🎤 **음성 입력**: Web Speech API 기반 한국어 음성 인식, MessageInput 통합, 실시간 transcript 전달
 - 🎨 **UI 컴포넌트**: Toast, CustomMenu, Divider, LoadingGate 등
 - 👋 **동적 인사말**: 우선순위 기반 조건별 인사말 시스템 (시간대, 요일, 이벤트)
 - 🌙 **다크모드**: Light/Dark 테마 전환, localStorage 저장, Tailwind class 기반
-- 👍 **메시지 피드백**: 좋아요/싫어요 기능, Store/IndexedDB 동기화
-- 🖍️ **형광펜 효과**: AI 메시지 내 키워드 하이라이트, 애니메이션 (왼쪽→오른쪽 칠하기)
+- 👍 **메시지 피드백**: 좋아요/싫어요 버튼 (AI 메시지 전용), 토글 가능, Store 및 IndexedDB 동기화
 - 🗑️ **채팅 삭제**: 삭제 후 첫 번째 대화 자동 선택, 대화 없으면 새 대화 자동 생성
-- ♾️ **무한 스크롤**: 20건 단위 메시지 페이지네이션, 카카오톡 스타일 역방향 로딩, 앵커 기반 스크롤 위치 유지, 타이핑 시작/완료 시 자동 스크롤
 
 ### API 서버 연동 정보
 

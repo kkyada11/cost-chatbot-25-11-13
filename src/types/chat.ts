@@ -8,7 +8,7 @@ export type AnimationStatus = "idle" | "typing" | "complete";
 
 export type MessageRole = "user" | "assistant";
 
-export type MessageFeedback = "good" | "bad" | null;
+export type MessageFeedback = "like" | "dislike" | null;
 
 export interface Message {
   id: string;

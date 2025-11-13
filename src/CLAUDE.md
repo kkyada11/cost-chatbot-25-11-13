@@ -752,355 +752,217 @@ setThemeAction({ theme: "dark" });
 - ✅ SSR hydration 경고 방지 (`suppressHydrationWarning`)
 - ✅ 실시간 테마 전환 (새로고침 불필요)
 
-### 형광펜 효과 시스템
 
-AI 메시지 내 키워드를 자동으로 강조하는 형광펜 효과 시스템입니다.
+### 타이핑 애니메이션 시스템
+
+AI 메시지를 실시간으로 타이핑하는 듯한 효과를 제공하는 애니메이션 시스템입니다.
 
 #### 아키텍처
-- **스타일 정의**: `app/globals.css` (`.highlight` 클래스, `@keyframes highlightSwipe`)
-- **컴포넌트**: `src/components/chat/MessageBubble.tsx` (자동 하이라이트 로직)
-- **Biome 설정**: `biome.json` (`noDangerouslySetInnerHtml` 규칙 비활성화)
+- **라이브러리**: Typed.js (타이핑 애니메이션)
+- **훅**: `src/hooks/useTypedAnimation.ts` (애니메이션 로직)
+- **콜백**: `src/hooks/useAnimationCallbacks.ts` (상태 관리 콜백)
+- **컴포넌트**: `src/components/chat/MessageBubble.tsx` (UI 통합)
+- **상태 관리**: `chatStore.updateMessageAnimationStatusAction`
 
 #### 구현 방식
 ```typescript
-// MessageBubble.tsx - contentToShow 계산
-if (status === 'complete' && messageType.isAssistant) {
-  // "컴포넌트" 단어를 <span class="highlight">로 감싸기
-  content = content.replace(
-    /컴포넌트/g,
-    '<span class="highlight">컴포넌트</span>'
+// useTypedAnimation.ts
+export function useTypedAnimation({ messageId, content, onComplete }) {
+  const elementRef = useRef<HTMLDivElement>(null);
+  const typedRef = useRef<Typed | null>(null);
+
+  useEffect(() => {
+    if (!elementRef.current || !content) return;
+
+    typedRef.current = new Typed(elementRef.current, {
+      strings: [content],
+      typeSpeed: UI_CONFIG.TYPING_SPEED,
+      showCursor: false,
+      onComplete: () => {
+        updateMessageAnimationStatusAction({ id: messageId, status: "complete" });
+        onComplete?.();
+      },
+    });
+
+    return () => typedRef.current?.destroy();
+  }, [messageId, content, onComplete]);
+
+  return elementRef;
+}
+```
+
+#### MessageBubble 통합
+```typescript
+// MessageBubble.tsx
+export function MessageBubble({ message }) {
+  const isTyping = message.animationStatus === "typing";
+  const typedRef = useTypedAnimation({
+    messageId: message.id,
+    content: isAssistant && isTyping ? message.content : "",
+  });
+
+  return (
+    <div>
+      {isAssistant && isTyping ? (
+        <div ref={typedRef} className="whitespace-pre-wrap text-sm" />
+      ) : (
+        <p className="whitespace-pre-wrap text-sm">{message.content}</p>
+      )}
+    </div>
   );
 }
-
-// HTML 렌더링
-<div dangerouslySetInnerHTML={{ __html: contentToShow }} />
 ```
 
-#### 애니메이션 효과
-- **방향**: 왼쪽 → 오른쪽 (형광펜 칠하기)
-- **속도**: 0.6초 (`ease-out`)
-- **컬러**: Light (`rgba(251, 191, 36, 0.3)`), Dark (`rgba(251, 191, 36, 0.25)`)
+#### 상태 흐름
+1. AI 메시지 수신 → `animationStatus: "typing"`
+2. Typed.js가 타이핑 애니메이션 시작
+3. 타이핑 완료 → `animationStatus: "complete"`
+4. IndexedDB 및 Store 동기화
 
-#### 사용 예시
-```
-AI 응답: "컴포넌트는 재사용 가능한 UI 단위입니다."
+### 음성 입력 시스템
 
-타이핑 완료 후 자동 하이라이트:
-"<span class="highlight">컴포넌트</span>는 재사용 가능한..."
-         ↑ 형광펜 효과 (애니메이션)
-```
+Web Speech API를 활용한 한국어 음성 인식 시스템입니다.
 
-#### 확장 가능성
+#### 아키텍처
+- **API**: Web Speech API (`SpeechRecognition`, `webkitSpeechRecognition`)
+- **훅**: `src/hooks/useSpeechRecognition.ts` (음성 인식 로직)
+- **컴포넌트**: `src/components/chat/VoiceInputButton.tsx` (음성 입력 버튼)
+- **통합**: `src/components/chat/MessageInput.tsx` (메시지 입력과 통합)
+
+#### 구현 방식
 ```typescript
-// 여러 키워드 하이라이트
-content = content.replace(
-  /(컴포넌트|훅|스토어)/g,
-  '<span class="highlight">$1</span>'
-);
-```
+// useSpeechRecognition.ts
+export function useSpeechRecognition() {
+  const [state, setState] = useState<SpeechRecognitionState>({
+    status: "idle",
+    transcript: "",
+    error: null,
+  });
 
-## 무한 스크롤 시스템
+  useEffect(() => {
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
 
-채팅 메시지를 20건 단위로 페이지네이션하여 로드하는 카카오톡 스타일 무한 스크롤 시스템입니다.
+    if (!SpeechRecognition) return;
 
-### 아키텍처
+    const recognition = new SpeechRecognition();
+    recognition.lang = "ko-KR";
+    recognition.continuous = false;
+    recognition.interimResults = false;
 
-- **페이지네이션 방식**: Cursor 기반 (order 필드 사용)
-- **스크롤 방향**: 역방향 (위로 스크롤 → 과거 메시지 로드)
-- **페이지 크기**: 20건
-- **스크롤 위치**: 자동 유지 (새 메시지 로드 시)
-- **상태 관리**: TanStack Query + Zustand Store
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results)
+        .map((result) => result[0].transcript)
+        .join("");
+      setState({ status: "idle", transcript, error: null });
+    };
 
-### 구현 계층
+    recognitionRef.current = recognition;
+  }, []);
 
-#### 1. Repository Layer (`src/repositories/messageRepository.ts`)
-
-```typescript
-/**
- * 페이지네이션된 메시지 조회
- * @param conversationId 대화 ID
- * @param cursor order 값 (이 값보다 작은 메시지 조회)
- * @param limit 조회 개수 (기본 20)
- */
-async findByConversationIdPaginated(
-  conversationId: string,
-  cursor?: number,
-  limit = 20
-): Promise<{ messages: Message[]; nextCursor?: number; hasMore: boolean }>
-```
-
-**구현 방식**:
-- IndexedDB의 order 필드를 cursor로 사용
-- `order < cursor` 조건으로 이전 메시지 조회
-- `limit+1`개를 조회하여 hasMore 판단
-- 역순 정렬로 최신 메시지부터 반환
-
-#### 2. Service Layer (`src/services/messageService.ts`)
-
-```typescript
-/**
- * 페이지네이션된 메시지 목록 조회
- */
-async loadMessagesPaginated(
-  conversationId: string,
-  cursor?: number,
-  limit = 20
-): Promise<PaginatedResult<Message>>
-```
-
-**역할**:
-- Repository 호출 및 에러 핸들링
-- 반환 타입 표준화 (`PaginatedResult<T>`)
-
-#### 3. Hook Layer (`src/hooks/useInfiniteChatMessages.ts`)
-
-```typescript
-/**
- * 무한 스크롤 채팅 메시지 훅
- * @param conversationId 대화 ID
- * @param pageSize 페이지당 메시지 수 (기본 20)
- */
-export function useInfiniteChatMessages(
-  conversationId: string | null,
-  pageSize = 20
-)
-```
-
-**기능**:
-- TanStack Query의 `useInfiniteQuery` 사용
-- 페이지들을 flat하게 병합하여 반환
-- Store와 자동 동기화 (`setMessagesAction`)
-- 낙관적 메시지와 병합
-
-**반환값**:
-```typescript
-{
-  messages: Message[],           // 병합된 전체 메시지
-  hasMoreMessages: boolean,      // 추가 메시지 존재 여부
-  isFetchingPreviousPage: boolean, // 로딩 중 여부
-  fetchPreviousPage: () => void,  // 이전 페이지 로드 함수
-  isLoading: boolean,
-  isError: boolean,
-  error: Error | null,
-  refetch: () => void,
+  return {
+    transcript,
+    isListening: state.status === "listening",
+    startListening,
+    stopListening,
+    resetTranscript,
+    isSupported: typeof window !== "undefined" && "webkitSpeechRecognition" in window,
+  };
 }
 ```
 
-#### 4. Store Layer (`src/stores/chatStore.ts`)
-
+#### VoiceInputButton 사용
 ```typescript
-/**
- * 무한 쿼리 결과를 Store에 동기화
- */
-setMessagesAction: ({ messages }) => void
-```
+// VoiceInputButton.tsx
+export function VoiceInputButton({ onTranscript, disabled }) {
+  const { transcript, isListening, startListening, stopListening } = useSpeechRecognition();
 
-**동작**:
-- 기존 낙관적 메시지 보존
-- 새 메시지와 병합 후 중복 제거
-- order 기준 정렬 + 동일 order 시 role 순서 (user → assistant)
-
-#### 5. Component Layer (`src/components/chat/MessageList.tsx`)
-
-**Intersection Observer 구현**:
-```typescript
-// 상단 감지 타겟
-<div ref={observerTargetRef} className="h-1" role="status" aria-live="polite" />
-
-// Observer 조건: 대화 전환 중이나 초기 로드 중에는 비활성화
-useEffect(() => {
-  if (
-    !observerTargetRef.current ||
-    !onLoadMore ||
-    !hasMoreMessages ||
-    isFetchingPreviousPage ||
-    isConversationIdMutated || // 대화 전환 중 비활성화
-    isInitialLoad // 초기 로드 중 비활성화
-  ) {
-    return;
-  }
-  // Observer 생성 및 observe...
-}, [hasMoreMessages, isFetchingPreviousPage, isConversationIdMutated, isInitialLoad, onLoadMore]);
-```
-
-**스크롤 위치 관리 로직**:
-
-1. **대화 전환 시 하단 스크롤** (메시지 로드 완료 후):
-```typescript
-useLayoutEffect(() => {
-  // 메시지가 로드된 경우에만 스크롤 실행
-  if ((isConversationIdMutated || isInitialLoad) && messages.length > 0) {
-    scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'instant' });
-
-    // 스크롤 완료 후 즉시 플래그 초기화
-    setIsInitialLoad(false);
-    if (isConversationIdMutated) {
-      setConversationIdMutatedAction({ isConversationIdMutated: false });
+  useEffect(() => {
+    if (transcript) {
+      onTranscript(transcript);
+      resetTranscript();
     }
-  }
-}, [isConversationIdMutated, isInitialLoad, messages.length, setConversationIdMutatedAction]);
+  }, [transcript]);
+
+  return (
+    <Button
+      onClick={() => isListening ? stopListening() : startListening()}
+      className={isListening ? "animate-pulse" : ""}
+    >
+      {isListening ? "⏹" : "🎤"}
+    </Button>
+  );
+}
 ```
 
-2. **이전 메시지 로드 시 앵커 기반 스크롤 위치 유지**:
+#### 특징
+- **한국어 지원**: `lang: "ko-KR"` 설정
+- **실시간 전달**: transcript 변경 시 즉시 입력 필드에 반영
+- **브라우저 감지**: 지원하지 않는 브라우저에서는 버튼 숨김
+- **시각적 피드백**: 녹음 중 pulse 애니메이션
+
+### 메시지 피드백 시스템
+
+AI 메시지에 대한 사용자 피드백(좋아요/싫어요)을 수집하는 시스템입니다.
+
+#### 아키텍처
+- **타입**: `MessageFeedback = "like" | "dislike" | null`
+- **컴포넌트**: `src/components/chat/MessageBubble.tsx` (피드백 버튼)
+- **상태 관리**: `chatStore.updateMessageFeedbackAction`
+- **저장소**: `messageRepository.updateFeedback` (IndexedDB)
+
+#### 구현 방식
 ```typescript
-useLayoutEffect(() => {
-  // 로딩 시작 시: 화면에 보이는 첫 번째 메시지를 앵커로 저장
-  if (isFetchingPreviousPage && !prevIsFetchingRef.current) {
-    const currentScrollTop = scrollContainer.scrollTop;
-    const messageElements = scrollContainer.querySelectorAll('[data-message-id]');
+// MessageBubble.tsx
+export function MessageBubble({ message }) {
+  const { updateMessageFeedbackAction } = useChatActions();
 
-    // 화면에 보이는 첫 번째 메시지 찾기 (scrollTop보다 큰 offsetTop)
-    let anchorElement: Element | null = null;
-    for (const element of messageElements) {
-      const offsetTop = (element as HTMLElement).offsetTop;
-      if (offsetTop >= currentScrollTop) {
-        anchorElement = element;
-        break;
-      }
+  const handleFeedback = async (feedback: MessageFeedback) => {
+    try {
+      // 같은 피드백을 다시 클릭하면 null로 설정 (토글)
+      const newFeedback = message.feedback === feedback ? null : feedback;
+
+      // Store 업데이트
+      updateMessageFeedbackAction({ id: message.id, feedback: newFeedback });
+
+      // IndexedDB 업데이트
+      await messageRepository.updateFeedback(message.id, newFeedback);
+    } catch (error) {
+      logger.error("Failed to update feedback", error);
     }
+  };
 
-    if (anchorElement) {
-      const anchorMessageId = anchorElement.getAttribute('data-message-id');
-      anchorMessageIdRef.current = anchorMessageId;
-    }
-  }
+  return (
+    <div>
+      <p>{message.content}</p>
 
-  // 로딩 완료 시: 앵커로 스크롤 이동
-  if (!isFetchingPreviousPage && prevIsFetchingRef.current) {
-    const anchorMessageId = anchorMessageIdRef.current;
-
-    if (anchorMessageId) {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            const anchorElement = scrollContainer.querySelector(
-              `[data-message-id="${anchorMessageId}"]`
-            );
-
-            if (anchorElement) {
-              anchorElement.scrollIntoView({ behavior: 'auto', block: 'start' });
-            }
-
-            anchorMessageIdRef.current = null;
-          });
-        });
-      });
-    }
-  }
-
-  prevIsFetchingRef.current = isFetchingPreviousPage;
-}, [isFetchingPreviousPage, isInitialLoad, messages.length]);
+      {/* AI 메시지에만 피드백 버튼 표시 */}
+      {isAssistant && !isOptimistic && !isTyping && (
+        <div className="flex gap-1">
+          <button
+            onClick={() => handleFeedback("like")}
+            className={message.feedback === "like" ? "text-blue-500" : "text-text-secondary"}
+          >
+            👍
+          </button>
+          <button
+            onClick={() => handleFeedback("dislike")}
+            className={message.feedback === "dislike" ? "text-red-500" : "text-text-secondary"}
+          >
+            👎
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 ```
 
-3. **새 메시지 추가 및 타이핑 상태 변경 시 스크롤**:
-```typescript
-useLayoutEffect(() => {
-  // 대화 전환 중이거나 초기 로드 중이면 스킵
-  if (isConversationIdMutated || isInitialLoad) return;
-
-  // 메시지가 있을 때
-  if (messages.length > 0) {
-    const lastMessage = messages[messages.length - 1];
-    const lastTimestamp = new Date(lastMessage.timestamp).getTime();
-    const currentAnimationStatus = lastMessage.animationStatus || '';
-
-    // 조건 1: 새로운 메시지가 추가됨
-    const isNewMessage = lastTimestamp > lastMessageTimestampRef.current;
-
-    // 조건 2: assistant 메시지의 타이핑 상태 변경 (typing 시작 또는 complete)
-    const isAnimationStatusChanged =
-      lastMessage.role === 'assistant' &&
-      currentAnimationStatus !== lastAnimationStatusRef.current &&
-      (currentAnimationStatus === 'typing' || currentAnimationStatus === 'complete');
-
-    // 새 메시지 추가 또는 타이핑 상태 변경 시 스크롤
-    if (isNewMessage || isAnimationStatusChanged) {
-      scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
-
-      // 마지막 메시지 정보 업데이트
-      lastMessageTimestampRef.current = lastTimestamp;
-      lastAnimationStatusRef.current = currentAnimationStatus;
-    }
-  }
-}, [messages, isConversationIdMutated, isInitialLoad]);
-```
-
-**주요 개선사항**:
-- **타이밍 이슈 해결**: 메시지 로드 완료 후 스크롤 실행 (`messages.length` 의존성)
-- **Observer 제어**: 대화 전환 중에는 Observer 비활성화하여 무한 스크롤 방지
-- **로딩 UI 제거**: 메시지를 항상 표시하여 스크롤 대상 보장
-- **즉시 플래그 초기화**: setTimeout 제거하여 타이밍 이슈 방지
-- **스마트 스크롤**: 새 메시지 추가 시 + 타이핑 시작/완료 시 자동 스크롤
-- **무한 스크롤 호환**: timestamp 비교로 과거 메시지 로드 시 스크롤 방지
-- **앵커 기반 스크롤**: 높이 차이 계산 대신 화면에 보이던 첫 메시지를 앵커로 사용하여 `scrollIntoView`로 정확한 위치 복원
-
-### 사용 예시
-
-#### ChatContainer에서 Hook 사용
-```typescript
-// ChatContainer.tsx
-const {
-  hasMoreMessages,
-  isFetchingPreviousPage,
-  fetchPreviousPage,
-} = useInfiniteChatMessages(currentConversationId, 20);
-
-<MessageList
-  hasMoreMessages={hasMoreMessages}
-  isFetchingPreviousPage={isFetchingPreviousPage}
-  onLoadMore={fetchPreviousPage}
-/>
-```
-
-### 데이터 흐름
-
-```
-1. 사용자가 위로 스크롤
-   ↓
-2. Intersection Observer가 상단 감지
-   ↓
-3. fetchPreviousPage() 호출
-   ↓
-4. useInfiniteQuery가 다음 페이지 요청
-   ↓
-5. Service → Repository → IndexedDB 조회
-   ↓
-6. 새 페이지 데이터 반환
-   ↓
-7. Hook이 페이지들을 flat하게 병합
-   ↓
-8. setMessagesAction으로 Store 동기화
-   ↓
-9. MessageList가 스크롤 위치 보정
-   ↓
-10. 화면에 새 메시지 표시 (위치 유지됨)
-```
-
-### 낙관적 업데이트 통합
-
-무한 스크롤은 **기존 낙관적 업데이트 로직과 병행** 작동합니다:
-
-1. **새 메시지 전송**: 기존 `useChat` 훅 사용 (낙관적 업데이트)
-2. **이전 메시지 로드**: `useInfiniteChatMessages` 훅 사용
-3. **Store 병합**: `setMessagesAction`이 낙관적 메시지 보존
-
-### 성능 최적화
-
-- **캐시 시간**: 5분 (staleTime)
-- **가비지 컬렉션**: 10분 (gcTime)
-- **React.memo**: MessageList 컴포넌트 메모이제이션
-- **useLayoutEffect**: 스크롤 보정을 렌더링 전 실행
-
-### 확장 가능성
-
-```typescript
-// 페이지 크기 조정
-useInfiniteChatMessages(conversationId, 50); // 50건씩 로드
-
-// 정방향 스크롤 (최신 메시지 로드)
-// - getNextPageParam 로직 변경
-// - order > cursor 조건 사용
-// - Intersection Observer를 하단에 배치
-```
+#### 특징
+- **AI 메시지 전용**: 사용자 메시지에는 표시하지 않음
+- **토글 기능**: 같은 버튼을 다시 클릭하면 피드백 취소
+- **시각적 피드백**: 선택된 버튼은 색상 강조 (좋아요: 파란색, 싫어요: 빨간색)
+- **동기화**: Store와 IndexedDB 동시 업데이트
+- **타이핑 중 숨김**: 타이핑 애니메이션 중에는 버튼 숨김
 
 개발 시 이 가이드라인을 따라주세요.
